@@ -50,7 +50,12 @@
   .hero{display:grid;grid-template-columns:118px 1fr;gap:20px;align-items:center;padding:22px 0 20px}
   .cellsvg{width:118px;height:auto;display:block;color:var(--ink)}
   #fill{transform-box:fill-box;transform-origin:50% 100%;transition:transform .8s cubic-bezier(.2,.7,.2,1),fill .3s;fill:var(--signal)}
-  #fill.low{fill:var(--alert)}
+  #fill.low{fill:var(--alert)} #fill.full{fill:var(--ok)}
+  .soc{transition:color .4s} .soc.full{color:var(--ok)} .soc.low{color:var(--alert)}
+  .state.full .dot{background:var(--ok)}
+  .lvl{display:none;margin-top:8px;font:600 13px var(--body);padding:4px 9px;border-radius:4px;width:max-content;max-width:100%}
+  .lvl.full{display:block;color:#fff;background:var(--ok)}
+  .lvl.low{display:block;color:#fff;background:var(--alert)}
   .flow{opacity:0;transition:opacity .4s}
   .flow.on{opacity:1}
   .flow path{fill:none;stroke:#12212B;stroke-opacity:.42;stroke-width:5;stroke-linecap:round;stroke-linejoin:round}
@@ -160,6 +165,8 @@
   .adv input{flex:1;min-width:0}
   .btn2{cursor:pointer;font-weight:600}
   .adv label{font-size:13px;color:var(--muted);display:block;margin-top:12px}
+  .adv input[type=range]{display:block;width:100%;padding:0;border:0;background:none;margin-top:8px;accent-color:var(--ink)}
+  .adv label b{color:var(--ink)}
   .adv label.chk{display:flex;gap:10px;align-items:center;color:var(--ink);font-size:14px;margin-top:14px}
   .adv label.chk input{width:20px;height:20px;flex:0 0 auto;accent-color:var(--signal)}
   pre{background:var(--panel);border:1px solid var(--rule);border-radius:6px;padding:10px;font:11px/1.45 ui-monospace,Consolas,monospace;
@@ -208,9 +215,10 @@
       </g>
     </svg>
     <div>
-      <div class="soc"><span id="soc">--</span><small>%</small></div>
+      <div class="soc" id="socBox"><span id="soc">--</span><small>%</small></div>
       <div class="state" id="state"><span class="dot"></span><span id="stateTxt">Sin datos</span></div>
       <div class="eta" id="eta">Activa el Bluetooth y pulsa «Conectar batería».</div>
+      <div class="lvl" id="lvl" role="status"></div>
       <div class="flags" id="flags"></div>
     </div>
   </section>
@@ -286,6 +294,10 @@
       </select>
       <button class="btn2" id="btnDemo">Ver demo</button>
     </div>
+    <label for="optFull">Verde (batería llena) desde el <b id="optFullV">100 %</b></label>
+    <input type="range" id="optFull" min="80" max="100" step="1" value="100">
+    <label for="optLow">Rojo (batería baja) por debajo del <b id="optLowV">20 %</b></label>
+    <input type="range" id="optLow" min="5" max="60" step="5" value="20">
     <label class="chk"><input type="checkbox" id="optAwake" checked> Mantener la pantalla encendida mientras está conectada</label>
     <label>Servicios Bluetooth encontrados</label>
     <pre id="svc">(sin conexión)</pre>
@@ -953,13 +965,28 @@ function drawChart(now = Date.now()) {
   $("hNote").textContent = note;
 }
 
+/* ---------------- Colores por nivel de carga ---------------- */
+let levels = Object.assign({ full: 100, low: 20 }, load("bi-levels") || {});
+let lastSoc = null;
+// Verde si está llena, rojo si está por debajo del umbral, amarillo en el resto.
+function applyLevel(soc) {
+  const level = soc == null ? "" : soc >= levels.full ? "full" : soc < levels.low ? "low" : "";
+  $("fill").setAttribute("class", level);
+  $("socBox").className = "soc " + level;
+  const m = $("lvl");
+  m.className = "lvl " + level;
+  m.textContent = level === "full" ? "Batería llena"
+    : level === "low" ? `Batería baja: por debajo del ${levels.low} %` : "";
+  return level;
+}
+
 function render(d) {
   updateEnergy(d);
   const soc = d.soc ?? null;
   $("soc").textContent = soc == null ? "--" : Math.round(soc);
-  const fill = $("fill");
-  fill.style.transform = `scaleY(${soc == null ? 0 : Math.max(0, Math.min(100, soc)) / 100})`;
-  fill.classList.toggle("low", soc != null && soc < 20);
+  $("fill").style.transform = `scaleY(${soc == null ? 0 : Math.max(0, Math.min(100, soc)) / 100})`;
+  lastSoc = soc;
+  const level = applyLevel(soc);
 
   // flujo de energía
   const I = d.current ?? 0, flow = $("flow");
@@ -978,6 +1005,7 @@ function render(d) {
     txt = "Descargando"; st.classList.add("out"); eta = "";
     if (d.remainAh != null) { const t = hm(d.remainAh / -I); if (t) eta = `Dura unas ${t} a este consumo`; }
   }
+  if (level === "full" && I <= 0.3) { txt = "Carga completa"; st.className = "state full"; }
   $("stateTxt").textContent = txt;
   $("eta").textContent = eta || " ";
 
@@ -1111,6 +1139,17 @@ $("btnShare").onclick = async () => {
 };
 if (!navigator.bluetooth) $("noBt").classList.remove("hidden");
 { const o = load("bi-awake"); if (o === false) $("optAwake").checked = false; }
+for (const [id, key] of [["optFull", "full"], ["optLow", "low"]]) {
+  const el = $(id);
+  el.value = levels[key];
+  $(id + "V").textContent = levels[key] + " %";
+  el.oninput = () => {
+    levels[key] = +el.value;
+    $(id + "V").textContent = el.value + " %";
+    store("bi-levels", levels);
+    applyLevel(lastSoc);
+  };
+}
 $("optAwake").onchange = e => { store("bi-awake", e.target.checked); e.target.checked ? (proto && keepAwake()) : releaseAwake(); };
 autoConnect();
 if (!window.BATERIA_NATIVE && "serviceWorker" in navigator && location.protocol.startsWith("http")) navigator.serviceWorker.register("sw.js").catch(() => {});
