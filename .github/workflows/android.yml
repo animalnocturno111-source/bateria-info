@@ -59,7 +59,8 @@ jobs:
           KEYSTORE_B64: ${{ secrets.KEYSTORE_B64 }}
           KEYSTORE_PASS: ${{ secrets.KEYSTORE_PASS }}
         run: |
-          echo "$KEYSTORE_B64" | base64 -d > ks.jks
+          printf '%s' "$KEYSTORE_B64" | tr -cd 'A-Za-z0-9+/=' | base64 -d > ks.jks
+          export KEYSTORE_PASS="$(printf '%s' "$KEYSTORE_PASS" | tr -cd 'A-Za-z0-9_-')"
           BT=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
           "$BT/zipalign" -p -f 4 android/app/build/outputs/apk/release/app-release-unsigned.apk aligned.apk
           "$BT/apksigner" sign --ks ks.jks --ks-pass env:KEYSTORE_PASS --ks-key-alias bateria --out bateria-info.apk aligned.apk
