@@ -1,0 +1,564 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0b0f14">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<title>Batería Info</title>
+<style>
+  :root{
+    --bg:#0b0f14; --card:#131a22; --card2:#18212b; --line:#243041;
+    --text:#e7edf3; --muted:#8a99ab; --accent:#3ddc97; --warn:#ffb547; --bad:#ff5d5d; --blue:#4da3ff;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--bg);color:var(--text);
+    font:15px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;-webkit-tap-highlight-color:transparent}
+  main{max-width:560px;margin:0 auto;padding:16px 16px calc(24px + env(safe-area-inset-bottom))}
+  header{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:14px}
+  h1{font-size:19px;margin:0;font-weight:650;letter-spacing:.2px}
+  .pill{font-size:12px;padding:4px 10px;border-radius:99px;background:var(--card2);color:var(--muted);white-space:nowrap}
+  .pill.ok{color:var(--accent)} .pill.err{color:var(--bad)} .pill.busy{color:var(--warn)}
+  .bar{display:flex;gap:8px;margin-bottom:14px}
+  button,select,input{font:inherit;color:var(--text);background:var(--card2);border:1px solid var(--line);
+    border-radius:12px;padding:11px 14px}
+  button{cursor:pointer;font-weight:600}
+  button.primary{background:var(--accent);color:#06281a;border-color:transparent;flex:1}
+  button:disabled{opacity:.45}
+  select{flex:0 0 auto}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:16px;margin-bottom:12px}
+  .hero{display:flex;align-items:center;gap:18px}
+  .ring{position:relative;width:150px;height:150px;flex:0 0 150px}
+  .ring svg{transform:rotate(-90deg)}
+  .ring .val{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
+  .ring .val b{font-size:38px;font-weight:700;font-variant-numeric:tabular-nums}
+  .ring .val span{font-size:12px;color:var(--muted)}
+  .hero .side{flex:1;min-width:0}
+  .state{font-size:17px;font-weight:650;margin-bottom:4px}
+  .muted{color:var(--muted);font-size:13px}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px}
+  .tile{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:12px 14px}
+  .tile .k{font-size:12px;color:var(--muted);margin-bottom:2px}
+  .tile .v{font-size:21px;font-weight:650;font-variant-numeric:tabular-nums}
+  .tile .v small{font-size:13px;color:var(--muted);font-weight:500;margin-left:2px}
+  h2{font-size:14px;margin:0 0 10px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.6px}
+  .cells{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:8px}
+  .cell{background:var(--card2);border-radius:10px;padding:8px 10px;font-variant-numeric:tabular-nums;border:1px solid transparent}
+  .cell .n{font-size:11px;color:var(--muted)} .cell .mv{font-weight:600}
+  .cell.max{border-color:var(--blue)} .cell.min{border-color:var(--warn)}
+  .cell .b{height:4px;border-radius:2px;background:var(--line);margin-top:6px;overflow:hidden}
+  .cell .b i{display:block;height:100%;background:var(--accent)}
+  .flags{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+  .flag{font-size:12px;padding:3px 9px;border-radius:99px;background:var(--card2)}
+  .flag.on{color:var(--accent)} .flag.off{color:var(--bad)}
+  details summary{cursor:pointer;color:var(--muted);font-weight:600;padding:4px 0}
+  pre{background:#070a0e;border-radius:10px;padding:10px;font:11px/1.45 ui-monospace,Consolas,monospace;
+    max-height:260px;overflow:auto;white-space:pre-wrap;word-break:break-all;margin:10px 0 0}
+  .row{display:flex;gap:8px;margin-top:10px} .row input{flex:1;min-width:0}
+  .hint{background:var(--card2);border-radius:12px;padding:12px;font-size:13px;color:var(--muted)}
+  .hidden{display:none}
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>🔋 Batería Info</h1>
+    <span id="status" class="pill">Desconectado</span>
+  </header>
+
+  <div class="bar">
+    <button id="btnConnect" class="primary">Conectar BMS</button>
+    <select id="proto" title="Protocolo">
+      <option value="auto">Auto</option>
+      <option value="pace">Pace</option>
+      <option value="jbd">JBD</option>
+      <option value="daly">Daly</option>
+    </select>
+    <button id="btnDemo" title="Ver con datos de ejemplo">Demo</button>
+  </div>
+
+  <div id="noBt" class="hint hidden">
+    Este navegador no soporta Web Bluetooth. En Android usa <b>Chrome</b>; en iPhone usa el navegador <b>Bluefy</b>.
+    La página debe abrirse por <b>https://</b> (o localhost).
+  </div>
+
+  <section class="card hero">
+    <div class="ring">
+      <svg width="150" height="150" viewBox="0 0 150 150">
+        <circle cx="75" cy="75" r="64" fill="none" stroke="var(--line)" stroke-width="12"/>
+        <circle id="arc" cx="75" cy="75" r="64" fill="none" stroke="var(--accent)" stroke-width="12"
+                stroke-linecap="round" stroke-dasharray="402.1" stroke-dashoffset="402.1"
+                style="transition:stroke-dashoffset .6s ease,stroke .3s"/>
+      </svg>
+      <div class="val"><b id="soc">--</b><span>carga</span></div>
+    </div>
+    <div class="side">
+      <div class="state" id="state">Sin datos</div>
+      <div class="muted" id="eta">&nbsp;</div>
+      <div class="muted" id="proto-name" style="margin-top:6px">&nbsp;</div>
+      <div class="flags" id="flags"></div>
+    </div>
+  </section>
+
+  <section class="grid">
+    <div class="tile"><div class="k">Voltaje</div><div class="v" id="v">--<small>V</small></div></div>
+    <div class="tile"><div class="k">Corriente</div><div class="v" id="i">--<small>A</small></div></div>
+    <div class="tile"><div class="k">Potencia</div><div class="v" id="p">--<small>W</small></div></div>
+    <div class="tile"><div class="k">Ciclos de carga</div><div class="v" id="cyc">--</div></div>
+    <div class="tile"><div class="k">Capacidad restante</div><div class="v" id="rem">--<small>Ah</small></div></div>
+    <div class="tile"><div class="k">Capacidad total</div><div class="v" id="full">--<small>Ah</small></div></div>
+    <div class="tile"><div class="k">Temperatura</div><div class="v" id="temp">--<small>°C</small></div></div>
+    <div class="tile"><div class="k">Diferencia celdas</div><div class="v" id="delta">--<small>mV</small></div></div>
+    <div class="tile hidden" id="sohTile"><div class="k">Salud (SOH)</div><div class="v" id="soh">--<small>%</small></div></div>
+  </section>
+
+  <section class="card">
+    <h2>Celdas <span id="cellInfo" class="muted" style="text-transform:none;letter-spacing:0"></span></h2>
+    <div class="cells" id="cells"><div class="muted">Sin datos</div></div>
+    <div class="muted" id="temps" style="margin-top:10px"></div>
+  </section>
+
+  <section class="card">
+    <details>
+      <summary>Diagnóstico Bluetooth</summary>
+      <div class="muted" style="margin-top:8px">Si la batería no se reconoce, copia lo que sale aquí: sirve para identificar el protocolo del BMS.</div>
+      <pre id="svc">(sin conexión)</pre>
+      <div class="row">
+        <select id="sendMode"><option value="hex">HEX</option><option value="ascii">ASCII+CR</option></select>
+        <input id="sendTxt" placeholder="DD A5 03 00 FF FD 77">
+        <button id="btnSend">Enviar</button>
+      </div>
+      <div class="row">
+        <input id="extraUuid" placeholder="UUID de servicio extra (opcional, ej. ffe0)">
+      </div>
+      <pre id="log"></pre>
+    </details>
+  </section>
+</main>
+
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+const hex = a => [...a].map(b => b.toString(16).padStart(2, "0")).join(" ").toUpperCase();
+const enc = s => new TextEncoder().encode(s);
+const cat = (a, b) => { const r = new Uint8Array(a.length + b.length); r.set(a); r.set(b, a.length); return r; };
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+const NUS = "6e400001-b5a3-f393-e0a9-e50e24dcca9e";
+const BASE_SERVICES = [0xff00, 0xfff0, 0xffe0, 0xffd0, 0xffb0, 0xfee7, NUS];
+const POLL_MS = 3000;
+
+let device = null, chNotify = null, chWrite = null;
+let rx = new Uint8Array(0), extractor = null, waiter = null;
+let proto = null, polling = false, demoTimer = null;
+
+/* ---------------- UI helpers ---------------- */
+function setStatus(txt, cls = "") { const s = $("status"); s.textContent = txt; s.className = "pill " + cls; }
+const logLines = [];
+function log(msg) {
+  const t = new Date().toLocaleTimeString();
+  logLines.push(`${t} ${msg}`); if (logLines.length > 200) logLines.shift();
+  const el = $("log"); el.textContent = logLines.join("\n"); el.scrollTop = el.scrollHeight;
+}
+function short(uuid) {
+  const m = /^0000([0-9a-f]{4})-0000-1000-8000-00805f9b34fb$/i.exec(uuid);
+  return m ? m[1].toLowerCase() : uuid.toLowerCase();
+}
+
+/* ---------------- BLE transport ---------------- */
+function onNotify(e) {
+  const dv = e.target.value;
+  const v = new Uint8Array(dv.buffer, dv.byteOffset, dv.byteLength).slice();
+  log("◀ " + hex(v));
+  rx = cat(rx, v);
+  if (rx.length > 4096) rx = rx.slice(-1024);
+  if (!extractor) return;
+  for (;;) {
+    const [frame, rest] = extractor(rx);
+    rx = rest;
+    if (!frame) break;
+    if (waiter) waiter(frame);
+  }
+}
+
+async function send(data) {
+  log("▶ " + hex(data));
+  for (let o = 0; o < data.length; o += 20) {
+    const chunk = data.slice(o, o + 20);
+    if (chWrite.properties.writeWithoutResponse) await chWrite.writeValueWithoutResponse(chunk);
+    else await chWrite.writeValueWithResponse(chunk);
+  }
+}
+
+function request(data, timeout = 2500) {
+  return new Promise((resolve, reject) => {
+    rx = new Uint8Array(0);
+    const t = setTimeout(() => { waiter = null; reject(new Error("Sin respuesta")); }, timeout);
+    waiter = f => { clearTimeout(t); waiter = null; resolve(f); };
+    send(data).catch(e => { clearTimeout(t); waiter = null; reject(e); });
+  });
+}
+
+async function useChars(notify, write) {
+  if (chNotify && chNotify !== notify) {
+    try { chNotify.removeEventListener("characteristicvaluechanged", onNotify); await chNotify.stopNotifications(); } catch {}
+  }
+  if (chNotify !== notify) {
+    chNotify = notify;
+    chNotify.addEventListener("characteristicvaluechanged", onNotify);
+    await chNotify.startNotifications();
+  }
+  chWrite = write;
+}
+
+/* ---------------- Protocolos ---------------- */
+const u16 = (b, i) => (b[i] << 8) | b[i + 1];
+const s16 = (b, i) => { const v = u16(b, i); return v > 32767 ? v - 65536 : v; };
+
+// --- JBD / Xiaoxiang (servicio ff00) ---
+const JBD_BASIC = new Uint8Array([0xDD, 0xA5, 0x03, 0x00, 0xFF, 0xFD, 0x77]);
+const JBD_CELLS = new Uint8Array([0xDD, 0xA5, 0x04, 0x00, 0xFF, 0xFC, 0x77]);
+function jbdExtract(buf) {
+  const i = buf.indexOf(0xDD);
+  if (i < 0) return [null, new Uint8Array(0)];
+  buf = buf.slice(i);
+  if (buf.length < 4) return [null, buf];
+  const total = buf[3] + 7;
+  if (buf.length < total) return [null, buf];
+  return [buf.slice(0, total), buf.slice(total)];
+}
+async function jbdPoll() {
+  const a = await request(JBD_BASIC);
+  if (a[1] !== 0x03 || a[2] !== 0x00) throw new Error("JBD: respuesta inválida");
+  const d = a.slice(4, 4 + a[3]);
+  const nt = d[22], temps = [];
+  for (let k = 0; k < nt; k++) temps.push((u16(d, 23 + k * 2) - 2731) / 10);
+  const r = {
+    voltage: u16(d, 0) / 100, current: s16(d, 2) / 100,
+    remainAh: u16(d, 4) / 100, fullAh: u16(d, 6) / 100, cycles: u16(d, 8),
+    soc: d[19], temps, charge: !!(d[20] & 1), discharge: !!(d[20] & 2),
+    protection: u16(d, 16), cells: []
+  };
+  try {
+    const c = await request(JBD_CELLS);
+    const dc = c.slice(4, 4 + c[3]);
+    for (let k = 0; k + 1 < dc.length; k += 2) r.cells.push(u16(dc, k) / 1000);
+  } catch {}
+  return r;
+}
+
+// --- Daly (servicio fff0) ---
+const DALY_REQ = new Uint8Array([0xD2, 0x03, 0x00, 0x00, 0x00, 0x3E, 0xD7, 0xB9]);
+function dalyExtract(buf) {
+  let i = -1;
+  for (let k = 0; k + 1 < buf.length; k++) if (buf[k] === 0xD2 && buf[k + 1] === 0x03) { i = k; break; }
+  if (i < 0) return [null, buf.length ? buf.slice(-1) : buf];
+  buf = buf.slice(i);
+  if (buf.length < 3) return [null, buf];
+  const total = buf[2] + 5;
+  if (buf.length < total) return [null, buf];
+  return [buf.slice(0, total), buf.slice(total)];
+}
+async function dalyPoll() {
+  const f = await request(DALY_REQ);
+  if (f[2] < 0x7C) throw new Error("Daly: trama corta");
+  const d = f.slice(3);
+  const n = u16(d, 98), nt = u16(d, 100);
+  if (n < 1 || n > 32) throw new Error("Daly: nº de celdas inválido");
+  const cells = [], temps = [];
+  for (let k = 0; k < n; k++) cells.push(u16(d, k * 2) / 1000);
+  for (let k = 0; k < Math.min(nt, 8); k++) temps.push(u16(d, 64 + k * 2) - 40);
+  return {
+    voltage: u16(d, 80) / 10, current: (u16(d, 82) - 30000) / 10, soc: u16(d, 84) / 10,
+    remainAh: u16(d, 96) / 10, cycles: u16(d, 102), cells, temps
+  };
+}
+
+// --- Pace / Pylontech ASCII (habitual en baterías rack tipo MUST) ---
+let paceAddr = { ver: "25", adr: 1 };
+function paceCmd(ver, adr, cid2, info) {
+  const h2 = n => n.toString(16).toUpperCase().padStart(2, "0");
+  const lenid = info.length;
+  let lchk = ((lenid & 0xF) + ((lenid >> 4) & 0xF) + ((lenid >> 8) & 0xF)) % 16;
+  lchk = (~lchk + 1) & 0xF;
+  const len = lchk.toString(16).toUpperCase() + lenid.toString(16).toUpperCase().padStart(3, "0");
+  const body = ver + h2(adr) + "46" + h2(cid2) + len + info;
+  let sum = 0; for (const ch of body) sum += ch.charCodeAt(0);
+  const chk = (~sum + 1) & 0xFFFF;
+  return enc("~" + body + chk.toString(16).toUpperCase().padStart(4, "0") + "\r");
+}
+function paceExtract(buf) {
+  const i = buf.indexOf(0x7E);
+  if (i < 0) return [null, new Uint8Array(0)];
+  buf = buf.slice(i);
+  const j = buf.indexOf(0x0D);
+  if (j < 0) return [null, buf];
+  return [buf.slice(0, j + 1), buf.slice(j + 1)];
+}
+function paceDecode(b, o) {
+  const need = n => p + n <= b.length;
+  let p = o;
+  if (!need(1)) return null;
+  const n = b[p++];
+  if (n < 4 || n > 32 || !need(n * 2 + 1)) return null;
+  const cells = [];
+  for (let k = 0; k < n; k++) { cells.push(u16(b, p) / 1000); p += 2; }
+  if (cells.some(c => c < 1.5 || c > 4.8)) return null;
+  const nt = b[p++];
+  if (nt > 12 || !need(nt * 2 + 11)) return null;
+  const temps = [];
+  for (let k = 0; k < nt; k++) { temps.push((u16(b, p) - 2731) / 10); p += 2; }
+  const current = s16(b, p) / 100; p += 2;
+  const voltage = u16(b, p) / 1000; p += 2;
+  let remainAh = u16(b, p) / 100; p += 2;
+  const udef = b[p++];
+  let fullAh = u16(b, p) / 100; p += 2;
+  const cycles = u16(b, p); p += 2;
+  let designAh = null;
+  if (udef === 4 && need(6)) {
+    remainAh = ((b[p] << 16) | (b[p + 1] << 8) | b[p + 2]) / 1000;
+    fullAh = ((b[p + 3] << 16) | (b[p + 4] << 8) | b[p + 5]) / 1000; p += 6;
+  } else if (udef >= 3 && need(2)) { designAh = u16(b, p) / 100; p += 2; }
+  const soc = fullAh > 0 ? Math.min(100, remainAh / fullAh * 100) : null;
+  return { cells, temps, current, voltage, remainAh, fullAh, designAh, cycles, soc };
+}
+async function pacePoll() {
+  const f = await request(paceCmd(paceAddr.ver, paceAddr.adr, 0x42, paceAddr.adr.toString(16).toUpperCase().padStart(2, "0")));
+  const s = new TextDecoder().decode(f).trim();
+  const rtn = s.slice(7, 9);
+  if (rtn !== "00") throw new Error("Pace: código de error " + rtn);
+  const lenid = parseInt(s.slice(10, 13), 16);
+  const info = s.slice(13, 13 + lenid), b = [];
+  for (let k = 0; k + 1 < info.length; k += 2) b.push(parseInt(info.substr(k, 2), 16));
+  for (const off of [2, 1, 0, 3]) { const r = paceDecode(b, off); if (r) return r; }
+  throw new Error("Pace: no se pudo interpretar la trama");
+}
+async function paceProbe() {
+  for (const [ver, adr] of [["25", 1], ["25", 0], ["20", 2], ["20", 1], ["25", 2]]) {
+    paceAddr = { ver, adr };
+    try { return await pacePoll(); } catch (e) { log(`Pace ver ${ver} adr ${adr}: ${e.message}`); }
+  }
+  throw new Error("Pace: sin respuesta");
+}
+
+const PROTOS = {
+  jbd:  { name: "JBD / Xiaoxiang", extract: jbdExtract,  poll: jbdPoll,  probe: jbdPoll },
+  daly: { name: "Daly",            extract: dalyExtract, poll: dalyPoll, probe: dalyPoll },
+  pace: { name: "Pace / Pylontech", extract: paceExtract, poll: pacePoll, probe: paceProbe },
+};
+
+/* ---------------- Conexión y autodetección ---------------- */
+function pickChars(chars, sid) {
+  const by = u => chars.find(c => short(c.uuid) === u);
+  const known = { ff00: ["ff01", "ff02"], fff0: ["fff1", "fff2"], ffe0: ["ffe1", "ffe1"] }[sid];
+  if (known && by(known[0]) && by(known[1])) return [by(known[0]), by(known[1])];
+  const n = chars.find(c => c.properties.notify || c.properties.indicate);
+  const w = chars.find(c => c !== n && (c.properties.write || c.properties.writeWithoutResponse))
+         || chars.find(c => c.properties.write || c.properties.writeWithoutResponse);
+  return n && w ? [n, w] : null;
+}
+
+async function connect() {
+  if (!navigator.bluetooth) { $("noBt").classList.remove("hidden"); return; }
+  stopDemo();
+  const extra = $("extraUuid").value.trim().toLowerCase();
+  const services = [...BASE_SERVICES];
+  if (extra) services.push(/^[0-9a-f]{4}$/.test(extra) ? parseInt(extra, 16) : extra);
+  try {
+    device = await navigator.bluetooth.requestDevice({ acceptAllDevices: true, optionalServices: services });
+  } catch (e) { log("Cancelado: " + e.message); return; }
+
+  device.addEventListener("gattserverdisconnected", onDisconnected);
+  setStatus("Conectando…", "busy");
+  $("btnConnect").disabled = true;
+  try {
+    const server = await device.gatt.connect();
+    const svcs = await server.getPrimaryServices();
+    const map = [];
+    let desc = `Dispositivo: ${device.name || "(sin nombre)"}\n`;
+    for (const s of svcs) {
+      const sid = short(s.uuid);
+      let chars = [];
+      try { chars = await s.getCharacteristics(); } catch {}
+      desc += `Servicio ${sid}\n`;
+      for (const c of chars) {
+        const p = Object.entries(c.properties).filter(([, v]) => v === true).map(([k]) => k).join(",");
+        desc += `  └ ${short(c.uuid)}  [${p}]\n`;
+      }
+      map.push({ sid, chars });
+    }
+    $("svc").textContent = desc;
+    log("Servicios: " + map.map(m => m.sid).join(", "));
+
+    const forced = $("proto").value;
+    const order = { ff00: ["jbd"], fff0: ["daly", "pace", "jbd"], ffe0: ["pace", "jbd", "daly"] };
+    const rank = s => ({ ff00: 0, fff0: 1, ffe0: 2 }[s] ?? 3);
+    map.sort((a, b) => rank(a.sid) - rank(b.sid));
+
+    setStatus("Detectando…", "busy");
+    for (const { sid, chars } of map) {
+      const pair = pickChars(chars, sid);
+      if (!pair) continue;
+      const cands = forced !== "auto" ? [forced] : (order[sid] || ["pace", "jbd", "daly"]);
+      for (const key of cands) {
+        try {
+          await useChars(pair[0], pair[1]);
+          extractor = PROTOS[key].extract;
+          log(`Probando ${PROTOS[key].name} en servicio ${sid}…`);
+          const data = await PROTOS[key].probe();
+          proto = key;
+          log(`✔ Detectado ${PROTOS[key].name}`);
+          setStatus(device.name || "Conectado", "ok");
+          $("proto-name").textContent = `BMS: ${PROTOS[key].name}`;
+          render(data);
+          startPolling();
+          $("btnConnect").textContent = "Desconectar";
+          $("btnConnect").disabled = false;
+          return;
+        } catch (e) { log(`✘ ${PROTOS[key].name}: ${e.message}`); }
+      }
+    }
+    setStatus("BMS no reconocido", "err");
+    log("No se reconoció el protocolo. Abre 'Diagnóstico' y comparte la lista de servicios y el registro.");
+    $("btnConnect").textContent = "Desconectar";
+  } catch (e) {
+    setStatus("Error", "err"); log("Error: " + e.message);
+  }
+  $("btnConnect").disabled = false;
+}
+
+function disconnect() {
+  polling = false;
+  if (device && device.gatt.connected) device.gatt.disconnect();
+}
+function onDisconnected() {
+  polling = false; proto = null; chNotify = null; chWrite = null;
+  setStatus("Desconectado");
+  $("btnConnect").textContent = "Conectar BMS";
+  $("btnConnect").disabled = false;
+  log("Desconectado");
+}
+
+async function startPolling() {
+  polling = true;
+  let fails = 0;
+  while (polling && proto) {
+    await sleep(POLL_MS);
+    if (!polling) break;
+    try { render(await PROTOS[proto].poll()); fails = 0; setStatus(device.name || "Conectado", "ok"); }
+    catch (e) { fails++; log("Lectura: " + e.message); if (fails >= 3) setStatus("Sin respuesta", "err"); }
+  }
+}
+
+/* ---------------- Render ---------------- */
+const fmt = (v, d = 1) => (v == null || isNaN(v)) ? "--" : v.toFixed(d);
+function setVal(id, v, unit) { $(id).innerHTML = `${v}${unit ? `<small>${unit}</small>` : ""}`; }
+function hm(h) {
+  if (!isFinite(h) || h <= 0 || h > 999) return null;
+  const H = Math.floor(h), M = Math.round((h - H) * 60);
+  return H ? `${H} h ${M} min` : `${M} min`;
+}
+
+function render(d) {
+  const soc = d.soc ?? null;
+  $("soc").textContent = soc == null ? "--" : Math.round(soc) + "%";
+  const arc = $("arc"), C = 402.1;
+  arc.style.strokeDashoffset = soc == null ? C : C * (1 - Math.max(0, Math.min(100, soc)) / 100);
+  arc.style.stroke = soc == null ? "var(--line)" : soc < 20 ? "var(--bad)" : soc < 40 ? "var(--warn)" : "var(--accent)";
+
+  const I = d.current ?? 0;
+  let state = "En reposo", eta = "";
+  if (I > 0.3) {
+    state = "⚡ Cargando";
+    if (d.fullAh && d.remainAh != null) { const t = hm((d.fullAh - d.remainAh) / I); if (t) eta = `Llena en ~${t}`; }
+  } else if (I < -0.3) {
+    state = "▼ Descargando";
+    if (d.remainAh != null) { const t = hm(d.remainAh / -I); if (t) eta = `Autonomía ~${t} a este consumo`; }
+  }
+  $("state").textContent = state;
+  $("eta").textContent = eta || " ";
+
+  setVal("v", fmt(d.voltage, 2), "V");
+  setVal("i", fmt(d.current, 1), "A");
+  setVal("p", d.voltage != null && d.current != null ? Math.round(d.voltage * d.current) : "--", "W");
+  setVal("cyc", d.cycles ?? "--");
+  setVal("rem", fmt(d.remainAh, 1), "Ah");
+  setVal("full", fmt(d.fullAh, 1), "Ah");
+
+  const temps = (d.temps || []).filter(t => t > -40 && t < 120);
+  setVal("temp", temps.length ? fmt(Math.max(...temps), 1) : "--", "°C");
+  $("temps").textContent = temps.length ? "Sensores: " + temps.map(t => t.toFixed(1) + " °C").join(" · ") : "";
+
+  if (d.designAh && d.fullAh) {
+    $("sohTile").classList.remove("hidden");
+    setVal("soh", Math.round(Math.min(100, d.fullAh / d.designAh * 100)), "%");
+  }
+
+  const flags = [];
+  if (d.charge != null) flags.push(`<span class="flag ${d.charge ? "on" : "off"}">Carga ${d.charge ? "ON" : "OFF"}</span>`);
+  if (d.discharge != null) flags.push(`<span class="flag ${d.discharge ? "on" : "off"}">Descarga ${d.discharge ? "ON" : "OFF"}</span>`);
+  if (d.protection) flags.push(`<span class="flag off">Protección activa (0x${d.protection.toString(16)})</span>`);
+  $("flags").innerHTML = flags.join("");
+
+  const cells = d.cells || [];
+  if (cells.length) {
+    const mx = Math.max(...cells), mn = Math.min(...cells);
+    const iMax = cells.indexOf(mx), iMin = cells.indexOf(mn);
+    setVal("delta", Math.round((mx - mn) * 1000), "mV");
+    $("cellInfo").textContent = `· ${cells.length}S · máx ${mx.toFixed(3)} · mín ${mn.toFixed(3)} V`;
+    $("cells").innerHTML = cells.map((v, k) => {
+      const pct = Math.max(0, Math.min(100, (v - 2.8) / (3.65 - 2.8) * 100));
+      const cls = k === iMax ? "max" : k === iMin ? "min" : "";
+      return `<div class="cell ${cls}"><div class="n">Celda ${k + 1}</div><div class="mv">${v.toFixed(3)} V</div><div class="b"><i style="width:${pct}%"></i></div></div>`;
+    }).join("");
+  } else {
+    setVal("delta", "--", "mV");
+  }
+}
+
+/* ---------------- Demo ---------------- */
+function demoData() {
+  const cells = Array.from({ length: 16 }, () => 3.30 + Math.random() * 0.015);
+  const current = -8 + Math.random() * 2;
+  return { voltage: cells.reduce((a, b) => a + b, 0), current, soc: 76, remainAh: 76, fullAh: 100,
+           designAh: 100, cycles: 142, temps: [24.5, 25.1, 26.0], cells, charge: true, discharge: true };
+}
+function stopDemo() { if (demoTimer) { clearInterval(demoTimer); demoTimer = null; } }
+function startDemo() {
+  stopDemo(); disconnect();
+  $("proto-name").textContent = "Modo demostración";
+  setStatus("Demo", "busy");
+  render(demoData());
+  demoTimer = setInterval(() => render(demoData()), POLL_MS);
+}
+
+/* ---------------- Envío manual (diagnóstico) ---------------- */
+async function manualSend() {
+  if (!chWrite) {
+    if (!chNotify && device?.gatt.connected) log("Sin característica de escritura seleccionada");
+    else log("No conectado");
+    return;
+  }
+  const txt = $("sendTxt").value.trim();
+  if (!txt) return;
+  let data;
+  if ($("sendMode").value === "hex") {
+    const parts = txt.replace(/0x/gi, "").replace(/[^0-9a-f]/gi, "");
+    if (parts.length % 2) { log("HEX inválido"); return; }
+    data = new Uint8Array(parts.match(/../g).map(h => parseInt(h, 16)));
+  } else data = enc(txt.replace(/\r?$/, "") + "\r");
+  const saved = extractor; extractor = null;   // ver respuestas en bruto
+  try { await send(data); } catch (e) { log("Error: " + e.message); }
+  setTimeout(() => { extractor = saved; }, 1500);
+}
+
+/* ---------------- Init ---------------- */
+$("btnConnect").onclick = () => (device && device.gatt.connected) ? disconnect() : connect();
+$("btnDemo").onclick = startDemo;
+$("btnSend").onclick = manualSend;
+if (!navigator.bluetooth) $("noBt").classList.remove("hidden");
+if ("serviceWorker" in navigator && location.protocol.startsWith("http")) navigator.serviceWorker.register("sw.js").catch(() => {});
+</script>
+</body>
+</html>

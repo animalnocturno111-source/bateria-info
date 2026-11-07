@@ -1,0 +1,15 @@
+{
+  "name": "Batería Info",
+  "short_name": "Batería",
+  "description": "Información del BMS de la batería por Bluetooth",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0b0f14",
+  "theme_color": "#0b0f14",
+  "lang": "es",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
