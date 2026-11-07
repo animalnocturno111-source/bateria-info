@@ -40,12 +40,11 @@ jobs:
       - name: Permisos Bluetooth y versión
         run: python3 scripts/patch-android.py ${{ github.run_number }}
 
-      - name: Icono
-        continue-on-error: true
+      - name: Icono y pantalla de inicio
         run: |
-          mkdir -p assets
-          node -e "require('sharp')('icon.svg',{density:600}).resize(1024,1024).png().toFile('assets/icon-only.png').then(()=>console.log('png ok'))"
-          npx @capacitor/assets generate --android --iconBackgroundColor '#0b0f14' --iconBackgroundColorDark '#0b0f14' --splashBackgroundColor '#0b0f14' --splashBackgroundColorDark '#0b0f14'
+          node scripts/make-icons.cjs
+          npx @capacitor/assets generate --android
+          ls android/app/src/main/res/mipmap-anydpi-v26/ && cat android/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml
 
       - name: Sincronizar
         run: npx cap sync android

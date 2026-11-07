@@ -84,7 +84,17 @@
   #mIn{left:50%;background:var(--signal)} #mOut{right:50%;background:var(--flow-out)}
   .track .zero{position:absolute;left:50%;top:-2px;bottom:-2px;width:2px;margin-left:-1px;background:var(--ink)}
   .mlabels{display:flex;justify-content:space-between;font-size:12px;color:var(--muted);margin-top:4px}
-  .hist{display:block;width:100%;height:110px;margin-top:14px;background:var(--panel);border:1px solid var(--rule);border-radius:4px}
+  .seg{display:inline-flex;margin-top:16px;border:1px solid var(--ink);border-radius:6px;overflow:hidden}
+  .seg button{background:transparent;border:0;padding:7px 14px;font:600 13px var(--body);color:var(--ink);cursor:pointer}
+  .seg button+button{border-left:1px solid var(--ink)}
+  .seg button.on{background:var(--ink);color:var(--paper)}
+  #hSoc{fill:none;stroke:var(--ink);stroke-width:1.6;vector-effect:non-scaling-stroke}
+  #hGrid line{stroke:var(--rule);stroke-width:1;vector-effect:non-scaling-stroke}
+  #hGrid line.now{stroke:var(--muted);stroke-dasharray:3 3}
+  #hBars .bin{fill:var(--signal)} #hBars .bout{fill:var(--flow-out)}
+  .haxis.wk span{flex:1;text-align:center}
+  .hnote{font-size:12px;color:var(--muted);margin-top:2px}
+  .hist{display:block;width:100%;height:120px;margin-top:8px;background:var(--panel);border:1px solid var(--rule);border-radius:4px}
   #hIn{fill:var(--signal);stroke:none} #hOut{fill:var(--flow-out);stroke:none}
   .hzero{stroke:var(--ink);stroke-width:1;vector-effect:non-scaling-stroke}
   .haxis{display:flex;justify-content:space-between;font-size:11px;color:var(--muted);margin-top:4px}
@@ -218,16 +228,25 @@
       <div class="track"><i id="mOut"></i><i id="mIn"></i><span class="zero"></span></div>
       <div class="mlabels"><span>◀ Sale</span><span id="mScale">±1 kW</span><span>Entra ▶</span></div>
     </div>
-    <svg id="hist" class="hist" viewBox="0 0 300 110" preserveAspectRatio="none" aria-label="Historial de potencia">
+    <div class="seg" role="tablist" aria-label="Periodo del gráfico">
+      <button data-r="30m" class="on" role="tab">30 min</button>
+      <button data-r="day" role="tab">Hoy</button>
+      <button data-r="week" role="tab">7 días</button>
+    </div>
+    <svg id="hist" class="hist" viewBox="0 0 300 110" preserveAspectRatio="none" aria-label="Historial de carga y descarga">
       <defs>
         <clipPath id="cTop"><rect x="0" y="0" width="300" height="55"/></clipPath>
         <clipPath id="cBot"><rect x="0" y="55" width="300" height="55"/></clipPath>
       </defs>
+      <g id="hGrid"></g>
       <path id="hIn" clip-path="url(#cTop)"/>
       <path id="hOut" clip-path="url(#cBot)"/>
+      <g id="hBars"></g>
       <line x1="0" y1="55" x2="300" y2="55" class="hzero"/>
+      <path id="hSoc"/>
     </svg>
-    <div class="haxis"><span>hace 30 min</span><span id="hPeak"></span><span>ahora</span></div>
+    <div class="haxis" id="hAxis"></div>
+    <div class="hnote" id="hNote"></div>
     <div class="totals">
       <div><span class="eyebrow">Entró hoy</span><b id="inToday">--</b></div>
       <div><span class="eyebrow">Salió hoy</span><b id="outToday">--</b></div>
@@ -582,7 +601,7 @@ let userDisconnect = false, reconnecting = false, wakeLock = null;
 function leaveDemo() {
   if (!demoMode) return;
   demoMode = false; lastSample = null;
-  const h = load("bi-hist"); hist = Array.isArray(h) ? h.filter(s => Date.now() - s.t < HIST_MS) : [];
+  reloadStored();
 }
 function optionalServices() {
   const extra = $("extraUuid").value.trim().toLowerCase();
@@ -793,15 +812,30 @@ function setDevice(name, protoName) {
 
 /* ---------------- Energía: entra / sale ---------------- */
 const HIST_MS = 30 * 60 * 1000;
-let demoMode = false, hist = [], lastSample = null;
-const today = () => new Date().toISOString().slice(0, 10);
+let demoMode = false, hist = [], lastSample = null, range = "30m", lastSave = 0;
+const dayKey = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+const today = () => dayKey(new Date());
 let energy = { day: today(), inWh: 0, outWh: 0 };
+let dayLog = { day: today(), p: [], n: [], s: [] };   // por minuto del día: potencia media, nº muestras, % batería
+let days = [];                                         // días anteriores: [{day, inWh, outWh}]
 function store(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} }
 function load(k) { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } }
-(function restore() {
-  const e = load("bi-energy"); if (e && e.day === today()) energy = e;
-  const h = load("bi-hist"); if (Array.isArray(h)) hist = h.filter(s => Date.now() - s.t < HIST_MS);
-})();
+function archiveDay(e) {
+  if (!e || !e.day || (e.inWh < 1 && e.outWh < 1)) return;
+  days = days.filter(x => x.day !== e.day);
+  days.push({ day: e.day, inWh: Math.round(e.inWh), outWh: Math.round(e.outWh) });
+  days.sort((a, b) => a.day < b.day ? -1 : 1);
+  days = days.slice(-14);
+  store("bi-days", days);
+}
+function reloadStored() {
+  days = load("bi-days") || [];
+  energy = { day: today(), inWh: 0, outWh: 0 };
+  const e = load("bi-energy"); if (e) { if (e.day === today()) energy = e; else archiveDay(e); }
+  const l = load("bi-daylog"); dayLog = l && l.day === today() ? l : { day: today(), p: [], n: [], s: [] };
+  const h = load("bi-hist"); hist = Array.isArray(h) ? h.filter(s => Date.now() - s.t < HIST_MS) : [];
+}
+reloadStored();
 const fmtW = w => Math.abs(w) >= 1000 ? (w / 1000).toFixed(2) + " kW" : Math.round(w) + " W";
 const fmtWh = wh => wh >= 1000 ? `${(wh / 1000).toFixed(2)}<small>kWh</small>` : `${Math.round(wh)}<small>Wh</small>`;
 function niceScale(w) { for (const s of [500, 1000, 2000, 3000, 5000, 8000, 10000, 15000]) if (w <= s) return s; return 20000; }
@@ -810,12 +844,19 @@ function updateEnergy(d) {
   if (d.voltage == null || d.current == null) return;
   const now = Date.now(), P = d.voltage * d.current;   // + entra, - sale
   if (!demoMode) {
-    if (energy.day !== today()) energy = { day: today(), inWh: 0, outWh: 0 };
+    if (energy.day !== today()) { archiveDay(energy); energy = { day: today(), inWh: 0, outWh: 0 }; }
+    if (dayLog.day !== today()) dayLog = { day: today(), p: [], n: [], s: [] };
     if (lastSample && now - lastSample.t < 15000) {       // no contar huecos largos
       const wh = (lastSample.p + P) / 2 * (now - lastSample.t) / 3600000;
       if (wh > 0) energy.inWh += wh; else energy.outWh -= wh;
       store("bi-energy", energy);
     }
+    // registro del día, por minuto
+    const dt = new Date(now), mi = dt.getHours() * 60 + dt.getMinutes(), k = dayLog.n[mi] || 0;
+    dayLog.p[mi] = Math.round(((dayLog.p[mi] || 0) * k + P) / (k + 1));
+    dayLog.n[mi] = k + 1;
+    if (d.soc != null) dayLog.s[mi] = Math.round(d.soc);
+    if (now - lastSave > 30000) { store("bi-daylog", dayLog); lastSave = now; }
   }
   lastSample = { t: now, p: P };
   hist.push({ t: now, p: Math.round(P) });
@@ -838,24 +879,78 @@ function drawEnergy(P, now) {
   $("mIn").style.width = P > 0 ? pct + "%" : "0";
   $("mOut").style.width = P < 0 ? pct + "%" : "0";
   $("mScale").textContent = `escala ±${fmtW(S)}`;
-  // historial (área con huecos cuando no hubo datos)
-  const x = t => 300 - (now - t) / HIST_MS * 300, y = p => 55 - p / S * 53;
-  let path = "", seg = [];
-  const flush = () => {
-    if (seg.length > 1) path += `M${x(seg[0].t).toFixed(1)} 55 ` + seg.map(s => `L${x(s.t).toFixed(1)} ${y(s.p).toFixed(1)}`).join(" ") + ` L${x(seg[seg.length - 1].t).toFixed(1)} 55 Z `;
-    seg = [];
-  };
-  hist.forEach((s, k) => { if (k && s.t - hist[k - 1].t > 15000) flush(); seg.push(s); });
-  flush();
-  $("hIn").setAttribute("d", path); $("hOut").setAttribute("d", path);
-  const mxIn = Math.max(0, ...hist.map(s => s.p)), mxOut = Math.max(0, ...hist.map(s => -s.p));
-  $("hPeak").textContent = hist.length > 1 ? `máx ▲${fmtW(mxIn)} ▼${fmtW(mxOut)}` : "";
+  drawChart(now);
   // totales del día
   if (demoMode) { $("inToday").innerHTML = fmtWh(1840); $("outToday").innerHTML = fmtWh(1260); $("netToday").innerHTML = "+" + fmtWh(580); return; }
   $("inToday").innerHTML = fmtWh(energy.inWh);
   $("outToday").innerHTML = fmtWh(energy.outWh);
   const net = energy.inWh - energy.outWh;
   $("netToday").innerHTML = (net >= 0 ? "+" : "−") + fmtWh(Math.abs(net));
+}
+
+// Área: amarillo por encima de la línea (entra), azul por debajo (sale). pts = [{x, p, gap}]
+function areaPath(pts, S) {
+  const y = p => (55 - Math.max(-1, Math.min(1, p / S)) * 53).toFixed(1);
+  let path = "", seg = [];
+  const flush = () => {
+    if (seg.length > 1) path += `M${seg[0].x.toFixed(1)} 55 ` + seg.map(s => `L${s.x.toFixed(1)} ${y(s.p)}`).join(" ") + ` L${seg[seg.length - 1].x.toFixed(1)} 55 Z `;
+    seg = [];
+  };
+  pts.forEach(s => { if (s.gap) flush(); seg.push(s); });
+  flush();
+  return path;
+}
+
+function drawChart(now = Date.now()) {
+  let path = "", soc = "", bars = "", grid = "", axis = "", note = "", wk = false;
+  if (range === "30m") {
+    const S = niceScale(Math.max(1, ...hist.map(s => Math.abs(s.p))));
+    path = areaPath(hist.map((s, k) => ({ x: 300 - (now - s.t) / HIST_MS * 300, p: s.p, gap: k && s.t - hist[k - 1].t > 15000 })), S);
+    const mxIn = Math.max(0, ...hist.map(s => s.p)), mxOut = Math.max(0, ...hist.map(s => -s.p));
+    axis = `<span>hace 30 min</span><span>ahora</span>`;
+    note = hist.length > 1 ? `Máximo: entró ${fmtW(mxIn)} · salió ${fmtW(mxOut)} · escala ±${fmtW(S)}` : "Aún no hay datos.";
+  } else if (range === "day") {
+    const pts = [], sp = [];
+    let prev = -10, prevS = -10;
+    dayLog.p.forEach((p, mi) => { if (p != null) { pts.push({ x: mi / 1440 * 300, p, gap: mi - prev > 3 }); prev = mi; } });
+    const S = niceScale(Math.max(1, ...pts.map(s => Math.abs(s.p))));
+    path = areaPath(pts, S);
+    dayLog.s.forEach((s, mi) => {
+      if (s == null) return;
+      soc += `${mi - prevS > 3 ? "M" : "L"}${(mi / 1440 * 300).toFixed(1)} ${(107 - s * 1.04).toFixed(1)} `;
+      prevS = mi;
+    });
+    const d = new Date(now), xn = (d.getHours() * 60 + d.getMinutes()) / 1440 * 300;
+    grid = [75, 150, 225].map(x => `<line x1="${x}" y1="0" x2="${x}" y2="110"/>`).join("") +
+           `<line class="now" x1="${xn.toFixed(1)}" y1="0" x2="${xn.toFixed(1)}" y2="110"/>`;
+    axis = ["0 h", "6 h", "12 h", "18 h", "24 h"].map(t => `<span>${t}</span>`).join("");
+    note = pts.length ? `Línea negra: % de batería · escala ±${fmtW(S)}` : "Aún no hay datos de hoy. Se registran mientras la app está conectada.";
+  } else {
+    wk = true;
+    const list = [];
+    for (let k = 6; k >= 0; k--) {
+      const d = new Date(now); d.setDate(d.getDate() - k);
+      const key = dayKey(d);
+      const e = key === today() && !demoMode ? energy : days.find(x => x.day === key);
+      list.push({ d, inWh: e ? e.inWh : 0, outWh: e ? e.outWh : 0 });
+    }
+    const S = niceScale(Math.max(1, ...list.map(v => Math.max(v.inWh, v.outWh))));
+    const h = v => (Math.min(1, v / S) * 53).toFixed(1);
+    bars = list.map((v, k) => {
+      const x = (k * 300 / 7 + 300 / 7 * 0.2).toFixed(1), w = (300 / 7 * 0.6).toFixed(1);
+      return `<rect class="bin" x="${x}" y="${(55 - h(v.inWh)).toFixed(1)}" width="${w}" height="${h(v.inWh)}"/>` +
+             `<rect class="bout" x="${x}" y="55" width="${w}" height="${h(v.outWh)}"/>`;
+    }).join("");
+    const DN = ["D", "L", "M", "X", "J", "V", "S"];
+    axis = list.map((v, k) => `<span>${k === 6 ? "Hoy" : DN[v.d.getDay()]}</span>`).join("");
+    const tin = list.reduce((a, v) => a + v.inWh, 0), tout = list.reduce((a, v) => a + v.outWh, 0);
+    note = `Semana: entró ${(tin / 1000).toFixed(1)} kWh · salió ${(tout / 1000).toFixed(1)} kWh · escala ${(S / 1000).toFixed(1)} kWh`;
+  }
+  $("hIn").setAttribute("d", path); $("hOut").setAttribute("d", path);
+  $("hSoc").setAttribute("d", soc);
+  $("hBars").innerHTML = bars; $("hGrid").innerHTML = grid;
+  $("hAxis").innerHTML = axis; $("hAxis").classList.toggle("wk", wk);
+  $("hNote").textContent = note;
 }
 
 function render(d) {
@@ -951,6 +1046,24 @@ function startDemo() {
   // historial de ejemplo de 30 min
   for (let t = Date.now() - HIST_MS + 3000; t < Date.now(); t += 6000)
     hist.push({ t, p: Math.round(900 * Math.sin(t / 240000) + 250 * Math.sin(t / 37000) + (Math.random() - .5) * 120) });
+  // día de ejemplo: sol de 7 a 19 h, consumo de la casa, % de batería
+  dayLog = { day: today(), p: [], n: [], s: [] };
+  const nowMin = new Date().getHours() * 60 + new Date().getMinutes();
+  let socD = 55;
+  for (let mi = 0; mi <= nowMin; mi++) {
+    const h = mi / 60, sun = h > 7 && h < 19 ? 2200 * Math.sin(Math.PI * (h - 7) / 12) : 0;
+    const load = 350 + (h > 19 && h < 23 ? 600 : 0) + (h > 13 && h < 14 ? 900 : 0) + Math.random() * 120;
+    let P = sun - load;
+    if (socD >= 99 && P > 0) P = 0;
+    socD = Math.max(5, Math.min(100, socD + P / 60 / 5120 * 100));
+    dayLog.p[mi] = Math.round(P); dayLog.n[mi] = 1; dayLog.s[mi] = Math.round(socD);
+  }
+  days = [];
+  for (let k = 6; k >= 1; k--) {
+    const d = new Date(); d.setDate(d.getDate() - k);
+    days.push({ day: dayKey(d), inWh: 3500 + Math.random() * 3000, outWh: 3000 + Math.random() * 2000 });
+  }
+  days.push({ day: today(), inWh: 1840, outWh: 1260 });
   setDevice("Demostración", "Datos de ejemplo");
   setStatus("Demo", "busy");
   render(demoData());
@@ -981,6 +1094,12 @@ async function manualSend() {
 $("btnConnect").onclick = () => (device && (device.gatt.connected || reconnecting)) ? disconnect() : connect();
 $("btnDemo").onclick = startDemo;
 $("btnSend").onclick = manualSend;
+document.querySelectorAll(".seg button").forEach(b => b.onclick = () => {
+  range = b.dataset.r;
+  document.querySelectorAll(".seg button").forEach(x => x.classList.toggle("on", x === b));
+  drawChart();
+});
+drawChart();
 $("btnShare").onclick = async () => {
   const text = "BATERIA INFO - DIAGNOSTICO\n" + navigator.userAgent + "\n\n" + $("svc").textContent + "\n\n" + logLines.join("\n");
   try {

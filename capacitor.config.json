@@ -2,7 +2,7 @@
   "appId": "io.github.animalnocturno.bateriainfo",
   "appName": "Batería Info",
   "webDir": "www",
-  "backgroundColor": "#0b0f14",
+  "backgroundColor": "#12212B",
   "plugins": {
     "BluetoothLe": {
       "displayStrings": {
