@@ -71,6 +71,30 @@
   .live b{display:block;font:600 27px/1.05 var(--cond);margin-top:6px;white-space:nowrap}
   .live b small{font:500 13px var(--body);color:var(--muted);margin-left:2px}
 
+  /* ---- energía que entra / sale ---- */
+  .energy{padding:18px 0 4px}
+  .ehead{display:flex;justify-content:space-between;align-items:baseline;gap:10px}
+  .ehead b{font:700 24px/1.1 var(--cond)}
+  .ehead b.in{color:var(--ink)} .ehead b.in::before{content:"";display:inline-block;width:12px;height:12px;border-radius:2px;background:var(--signal);margin-right:8px}
+  .ehead b.out::before{content:"";display:inline-block;width:12px;height:12px;border-radius:2px;background:var(--flow-out);margin-right:8px}
+  .esub{font-size:13px;color:var(--muted);text-align:right}
+  .meter{margin-top:12px}
+  .track{position:relative;height:18px;background:var(--panel);border:1px solid var(--rule);border-radius:4px;overflow:hidden}
+  .track i{position:absolute;top:0;bottom:0;width:0;transition:width .6s cubic-bezier(.2,.7,.2,1)}
+  #mIn{left:50%;background:var(--signal)} #mOut{right:50%;background:var(--flow-out)}
+  .track .zero{position:absolute;left:50%;top:-2px;bottom:-2px;width:2px;margin-left:-1px;background:var(--ink)}
+  .mlabels{display:flex;justify-content:space-between;font-size:12px;color:var(--muted);margin-top:4px}
+  .hist{display:block;width:100%;height:110px;margin-top:14px;background:var(--panel);border:1px solid var(--rule);border-radius:4px}
+  #hIn{fill:var(--signal);stroke:none} #hOut{fill:var(--flow-out);stroke:none}
+  .hzero{stroke:var(--ink);stroke-width:1;vector-effect:non-scaling-stroke}
+  .haxis{display:flex;justify-content:space-between;font-size:11px;color:var(--muted);margin-top:4px}
+  .totals{display:grid;grid-template-columns:repeat(3,1fr);margin-top:14px;border-top:1px solid var(--rule)}
+  .totals div{padding:10px 0 0 10px;border-left:1px solid var(--rule)}
+  .totals div:first-child{padding-left:0;border-left:0}
+  .totals b{display:block;font:600 22px/1.1 var(--cond);margin-top:5px}
+  .totals b small{font:500 12px var(--body);color:var(--muted);margin-left:2px}
+  .enote{font-size:12px;color:var(--muted);margin:10px 0 0}
+
   /* ---- placa de características ---- */
   .plate{position:relative;margin:22px 0 0;background:var(--panel);border:1.5px solid var(--ink);border-radius:6px;padding:14px 18px 6px}
   .plate::before,.plate::after,.plate .rv::before,.plate .rv::after{content:"";position:absolute;width:6px;height:6px;border-radius:50%;
@@ -126,6 +150,8 @@
   .adv input{flex:1;min-width:0}
   .btn2{cursor:pointer;font-weight:600}
   .adv label{font-size:13px;color:var(--muted);display:block;margin-top:12px}
+  .adv label.chk{display:flex;gap:10px;align-items:center;color:var(--ink);font-size:14px;margin-top:14px}
+  .adv label.chk input{width:20px;height:20px;flex:0 0 auto;accent-color:var(--signal)}
   pre{background:var(--panel);border:1px solid var(--rule);border-radius:6px;padding:10px;font:11px/1.45 ui-monospace,Consolas,monospace;
     max-height:240px;overflow:auto;white-space:pre-wrap;word-break:break-all;margin:10px 0 0}
 
@@ -186,6 +212,30 @@
     <div><span class="eyebrow">Temp. máx</span><b id="temp">--<small>°C</small></b></div>
   </section>
 
+  <section class="energy" aria-label="Energía que entra y sale">
+    <div class="ehead"><b id="flowTxt">Sin datos</b><span id="flowSub" class="esub"></span></div>
+    <div class="meter" aria-hidden="true">
+      <div class="track"><i id="mOut"></i><i id="mIn"></i><span class="zero"></span></div>
+      <div class="mlabels"><span>◀ Sale</span><span id="mScale">±1 kW</span><span>Entra ▶</span></div>
+    </div>
+    <svg id="hist" class="hist" viewBox="0 0 300 110" preserveAspectRatio="none" aria-label="Historial de potencia">
+      <defs>
+        <clipPath id="cTop"><rect x="0" y="0" width="300" height="55"/></clipPath>
+        <clipPath id="cBot"><rect x="0" y="55" width="300" height="55"/></clipPath>
+      </defs>
+      <path id="hIn" clip-path="url(#cTop)"/>
+      <path id="hOut" clip-path="url(#cBot)"/>
+      <line x1="0" y1="55" x2="300" y2="55" class="hzero"/>
+    </svg>
+    <div class="haxis"><span>hace 30 min</span><span id="hPeak"></span><span>ahora</span></div>
+    <div class="totals">
+      <div><span class="eyebrow">Entró hoy</span><b id="inToday">--</b></div>
+      <div><span class="eyebrow">Salió hoy</span><b id="outToday">--</b></div>
+      <div><span class="eyebrow">Balance</span><b id="netToday">--</b></div>
+    </div>
+    <p class="enote">El BMS mide la corriente neta de la batería. Los totales se cuentan solo mientras la app está conectada.</p>
+  </section>
+
   <section class="plate" aria-label="Datos de la batería">
     <span class="rv"></span>
     <header><span class="eyebrow">Placa de la batería</span><span id="protoName">—</span></header>
@@ -217,6 +267,7 @@
       </select>
       <button class="btn2" id="btnDemo">Ver demo</button>
     </div>
+    <label class="chk"><input type="checkbox" id="optAwake" checked> Mantener la pantalla encendida mientras está conectada</label>
     <label>Servicios Bluetooth encontrados</label>
     <pre id="svc">(sin conexión)</pre>
     <label for="sendTxt">Enviar comando manual</label>
@@ -526,17 +577,41 @@ function pickChars(chars, sid) {
   return n && w ? [n, w] : null;
 }
 
-async function connect() {
-  if (!navigator.bluetooth) { $("noBt").classList.remove("hidden"); return; }
-  stopDemo();
+let userDisconnect = false, reconnecting = false, wakeLock = null;
+
+function leaveDemo() {
+  if (!demoMode) return;
+  demoMode = false; lastSample = null;
+  const h = load("bi-hist"); hist = Array.isArray(h) ? h.filter(s => Date.now() - s.t < HIST_MS) : [];
+}
+function optionalServices() {
   const extra = $("extraUuid").value.trim().toLowerCase();
   const services = [...BASE_SERVICES];
   if (extra) services.push(/^[0-9a-f]{4}$/.test(extra) ? parseInt(extra, 16) : extra);
-  try {
-    device = await navigator.bluetooth.requestDevice({ acceptAllDevices: true, optionalServices: services });
-  } catch (e) { log("Cancelado: " + e.message); return; }
+  return services;
+}
 
-  device.addEventListener("gattserverdisconnected", onDisconnected);
+// Botón "Conectar": el usuario elige la batería (solo la primera vez o si cambia de batería).
+async function connect() {
+  leaveDemo();
+  if (!navigator.bluetooth) { $("noBt").classList.remove("hidden"); return; }
+  stopDemo();
+  let dev;
+  try {
+    dev = await navigator.bluetooth.requestDevice({ acceptAllDevices: true, optionalServices: optionalServices() });
+  } catch (e) { log("Cancelado: " + e.message); return; }
+  store("bi-device", { id: dev.id, name: dev.name });
+  userDisconnect = false;
+  await attach(dev);
+}
+
+// Conecta a un dispositivo ya elegido y detecta el protocolo.
+async function attach(dev) {
+  if (device !== dev) {
+    if (device) device.removeEventListener("gattserverdisconnected", onDisconnected);
+    device = dev;
+    device.addEventListener("gattserverdisconnected", onDisconnected);
+  }
   setStatus("Conectando…", "busy");
   setDevice(device.name, "Detectando protocolo…");
   $("btnConnect").disabled = true;
@@ -561,6 +636,7 @@ async function connect() {
     log("Servicios: " + (map.map(m => m.sid).join(", ") || "ninguno"));
 
     const forced = $("proto").value;
+    const saved = load("bi-proto");
     const order = { ff00: ["jbd"], fff0: ["paceex", "daly", "pace", "jbd"], ffe0: ["pace", "jbd", "daly"] };
     const rank = s => ({ ff00: 0, fff0: 1, ffe0: 2 }[s] ?? 3);
     map.sort((a, b) => rank(a.sid) - rank(b.sid));
@@ -569,7 +645,8 @@ async function connect() {
     for (const { sid, chars } of map) {
       const pair = pickChars(chars, sid);
       if (!pair) continue;
-      const cands = forced !== "auto" ? [forced] : (order[sid] || ["pace", "jbd", "daly"]);
+      let cands = forced !== "auto" ? [forced] : (order[sid] || ["pace", "jbd", "daly"]);
+      if (forced === "auto" && saved && cands.includes(saved)) cands = [saved, ...cands.filter(k => k !== saved)];
       for (const key of cands) {
         try {
           await useChars(pair[0], pair[1]);
@@ -577,13 +654,15 @@ async function connect() {
           log(`Probando ${PROTOS[key].name} en servicio ${sid}…`);
           const data = await PROTOS[key].probe();
           proto = key;
+          store("bi-proto", key);
           log(`✔ Detectado ${PROTOS[key].name}`);
           setStatus("Conectado", "ok");
           setDevice(device.name, PROTOS[key].name);
           render(data);
           startPolling();
           setBtn(true);
-          return;
+          keepAwake();
+          return true;
         } catch (e) { log(`✘ ${PROTOS[key].name}: ${e.message}`); }
       }
     }
@@ -591,21 +670,92 @@ async function connect() {
     log("No se reconoció el protocolo. Abre 'Diagnóstico' y comparte la lista de servicios y el registro.");
     setBtn(true);
   } catch (e) {
-    setStatus("Error", "err"); log("Error: " + e.message);
+    setStatus("Sin conexión", "err"); log("Error: " + e.message);
+    setBtn(false);
   }
   $("btnConnect").disabled = false;
+  return false;
 }
 
 function disconnect() {
+  userDisconnect = true;
   polling = false;
+  releaseAwake();
   if (device && device.gatt.connected) device.gatt.disconnect();
 }
 function onDisconnected() {
   polling = false; proto = null; chNotify = null; chWrite = null;
-  setStatus("Desconectado");
-  setBtn(false);
   log("Desconectado");
+  if (userDisconnect) { setStatus("Desconectado"); setBtn(false); return; }
+  reconnectLoop();   // se cayó sola: reintentar
 }
+
+// Reintenta hasta reconectar (mientras la app esté a la vista).
+async function reconnectLoop() {
+  if (reconnecting || !device) return;
+  reconnecting = true;
+  let n = 0;
+  while (!userDisconnect && device && !device.gatt.connected) {
+    if (document.visibilityState !== "visible") { await sleep(2000); continue; }
+    n++;
+    setStatus(`Reconectando… (${n})`, "busy");
+    if (await attach(device)) break;
+    $("btnConnect").textContent = "Dejar de reconectar"; $("btnConnect").classList.add("off");
+    await sleep(Math.min(15000, 3000 + n * 1000));
+  }
+  reconnecting = false;
+  if (userDisconnect) { setStatus("Desconectado"); setBtn(false); }
+}
+
+// Al abrir la app: reconectar sola a la última batería, si el navegador lo permite.
+async function autoConnect() {
+  const saved = load("bi-device");
+  if (!saved || !navigator.bluetooth) return;
+  setDevice(saved.name, "—");
+  if (!navigator.bluetooth.getDevices) {
+    $("eta").textContent = "Pulsa «Conectar batería» para conectar.";
+    log("Este navegador no permite reconectar sola (falta getDevices).");
+    return;
+  }
+  let dev;
+  try {
+    const list = await navigator.bluetooth.getDevices();
+    dev = list.find(d => d.id === saved.id) || list.find(d => d.name && d.name === saved.name);
+  } catch (e) { log("getDevices: " + e.message); }
+  if (!dev) { log("No hay permiso guardado para la batería; pulsa Conectar."); return; }
+  userDisconnect = false;
+  device = null;
+  setStatus("Buscando batería…", "busy");
+  // Esperar a que la batería se anuncie (si se puede), luego conectar.
+  if (dev.watchAdvertisements) {
+    try {
+      const ac = new AbortController();
+      const seen = new Promise(res => {
+        dev.addEventListener("advertisementreceived", res, { once: true });
+        setTimeout(res, 10000);
+      });
+      await dev.watchAdvertisements({ signal: ac.signal });
+      await seen; ac.abort();
+    } catch (e) { log("watchAdvertisements: " + e.message); }
+  }
+  if (!(await attach(dev))) reconnectLoop();
+}
+
+// Mantener la pantalla encendida mientras está conectada (si la opción está activa).
+async function keepAwake() {
+  if (!$("optAwake").checked || !("wakeLock" in navigator) || wakeLock) return;
+  try {
+    wakeLock = await navigator.wakeLock.request("screen");
+    wakeLock.addEventListener("release", () => { wakeLock = null; });
+  } catch (e) { log("Pantalla encendida: " + e.message); }
+}
+function releaseAwake() { if (wakeLock) { wakeLock.release().catch(() => {}); wakeLock = null; } }
+
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState !== "visible") return;
+  if (proto) keepAwake();
+  if (device && !device.gatt.connected && !userDisconnect) reconnectLoop();
+});
 
 async function startPolling() {
   polling = true;
@@ -637,7 +787,75 @@ function setDevice(name, protoName) {
   $("protoName").textContent = protoName || "—";
 }
 
+/* ---------------- Energía: entra / sale ---------------- */
+const HIST_MS = 30 * 60 * 1000;
+let demoMode = false, hist = [], lastSample = null;
+const today = () => new Date().toISOString().slice(0, 10);
+let energy = { day: today(), inWh: 0, outWh: 0 };
+function store(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} }
+function load(k) { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } }
+(function restore() {
+  const e = load("bi-energy"); if (e && e.day === today()) energy = e;
+  const h = load("bi-hist"); if (Array.isArray(h)) hist = h.filter(s => Date.now() - s.t < HIST_MS);
+})();
+const fmtW = w => Math.abs(w) >= 1000 ? (w / 1000).toFixed(2) + " kW" : Math.round(w) + " W";
+const fmtWh = wh => wh >= 1000 ? `${(wh / 1000).toFixed(2)}<small>kWh</small>` : `${Math.round(wh)}<small>Wh</small>`;
+function niceScale(w) { for (const s of [500, 1000, 2000, 3000, 5000, 8000, 10000, 15000]) if (w <= s) return s; return 20000; }
+
+function updateEnergy(d) {
+  if (d.voltage == null || d.current == null) return;
+  const now = Date.now(), P = d.voltage * d.current;   // + entra, - sale
+  if (!demoMode) {
+    if (energy.day !== today()) energy = { day: today(), inWh: 0, outWh: 0 };
+    if (lastSample && now - lastSample.t < 15000) {       // no contar huecos largos
+      const wh = (lastSample.p + P) / 2 * (now - lastSample.t) / 3600000;
+      if (wh > 0) energy.inWh += wh; else energy.outWh -= wh;
+      store("bi-energy", energy);
+    }
+  }
+  lastSample = { t: now, p: P };
+  hist.push({ t: now, p: Math.round(P) });
+  hist = hist.filter(s => now - s.t < HIST_MS);
+  if (!demoMode) store("bi-hist", hist);
+  drawEnergy(P, now);
+}
+
+function drawEnergy(P, now) {
+  const peak = Math.max(Math.abs(P), ...hist.map(s => Math.abs(s.p)), 1);
+  const S = niceScale(peak);
+  // texto
+  const ft = $("flowTxt");
+  if (P > 15) { ft.textContent = `Entran ${fmtW(P)}`; ft.className = "in"; }
+  else if (P < -15) { ft.textContent = `Salen ${fmtW(-P)}`; ft.className = "out"; }
+  else { ft.textContent = "Sin flujo"; ft.className = ""; }
+  $("flowSub").textContent = P > 15 ? "cargando la batería" : P < -15 ? "la batería alimenta la casa" : "";
+  // medidor
+  const pct = Math.min(50, Math.abs(P) / S * 50);
+  $("mIn").style.width = P > 0 ? pct + "%" : "0";
+  $("mOut").style.width = P < 0 ? pct + "%" : "0";
+  $("mScale").textContent = `escala ±${fmtW(S)}`;
+  // historial (área con huecos cuando no hubo datos)
+  const x = t => 300 - (now - t) / HIST_MS * 300, y = p => 55 - p / S * 53;
+  let path = "", seg = [];
+  const flush = () => {
+    if (seg.length > 1) path += `M${x(seg[0].t).toFixed(1)} 55 ` + seg.map(s => `L${x(s.t).toFixed(1)} ${y(s.p).toFixed(1)}`).join(" ") + ` L${x(seg[seg.length - 1].t).toFixed(1)} 55 Z `;
+    seg = [];
+  };
+  hist.forEach((s, k) => { if (k && s.t - hist[k - 1].t > 15000) flush(); seg.push(s); });
+  flush();
+  $("hIn").setAttribute("d", path); $("hOut").setAttribute("d", path);
+  const mxIn = Math.max(0, ...hist.map(s => s.p)), mxOut = Math.max(0, ...hist.map(s => -s.p));
+  $("hPeak").textContent = hist.length > 1 ? `máx ▲${fmtW(mxIn)} ▼${fmtW(mxOut)}` : "";
+  // totales del día
+  if (demoMode) { $("inToday").innerHTML = fmtWh(1840); $("outToday").innerHTML = fmtWh(1260); $("netToday").innerHTML = "+" + fmtWh(580); return; }
+  $("inToday").innerHTML = fmtWh(energy.inWh);
+  $("outToday").innerHTML = fmtWh(energy.outWh);
+  const net = energy.inWh - energy.outWh;
+  $("netToday").innerHTML = (net >= 0 ? "+" : "−") + fmtWh(Math.abs(net));
+}
+
 function render(d) {
+  updateEnergy(d);
   const soc = d.soc ?? null;
   $("soc").textContent = soc == null ? "--" : Math.round(soc);
   const fill = $("fill");
@@ -718,13 +936,17 @@ function render(d) {
 /* ---------------- Demo ---------------- */
 function demoData() {
   const cells = Array.from({ length: 16 }, () => 3.30 + Math.random() * 0.015);
-  const current = -8 + Math.random() * 2;
+  const current = 18 * Math.sin(Date.now() / 9000) + Math.random() * 2;
   return { voltage: cells.reduce((a, b) => a + b, 0), current, soc: 76, remainAh: 76, fullAh: 100,
            designAh: 100, soh: 98, cycles: 239, temps: [22.2, 22.4, 22.7, 22.4], cells, balancing: 0b100100 };
 }
 function stopDemo() { if (demoTimer) { clearInterval(demoTimer); demoTimer = null; } }
 function startDemo() {
   stopDemo(); disconnect();
+  demoMode = true; hist = []; lastSample = null;
+  // historial de ejemplo de 30 min
+  for (let t = Date.now() - HIST_MS + 3000; t < Date.now(); t += 6000)
+    hist.push({ t, p: Math.round(900 * Math.sin(t / 240000) + 250 * Math.sin(t / 37000) + (Math.random() - .5) * 120) });
   setDevice("Demostración", "Datos de ejemplo");
   setStatus("Demo", "busy");
   render(demoData());
@@ -752,7 +974,7 @@ async function manualSend() {
 }
 
 /* ---------------- Init ---------------- */
-$("btnConnect").onclick = () => (device && device.gatt.connected) ? disconnect() : connect();
+$("btnConnect").onclick = () => (device && (device.gatt.connected || reconnecting)) ? disconnect() : connect();
 $("btnDemo").onclick = startDemo;
 $("btnSend").onclick = manualSend;
 $("btnShare").onclick = async () => {
@@ -765,6 +987,9 @@ $("btnShare").onclick = async () => {
   }
 };
 if (!navigator.bluetooth) $("noBt").classList.remove("hidden");
+{ const o = load("bi-awake"); if (o === false) $("optAwake").checked = false; }
+$("optAwake").onchange = e => { store("bi-awake", e.target.checked); e.target.checked ? (proto && keepAwake()) : releaseAwake(); };
+autoConnect();
 if ("serviceWorker" in navigator && location.protocol.startsWith("http")) navigator.serviceWorker.register("sw.js").catch(() => {});
 </script>
 </body>
