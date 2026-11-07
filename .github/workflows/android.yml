@@ -1,0 +1,80 @@
+name: APK Android
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apk
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Dependencias
+        run: npm ci
+
+      - name: Preparar app web
+        run: npm run build
+
+      - name: Crear proyecto Android
+        run: npx cap add android
+
+      - name: Permisos Bluetooth y versión
+        run: python3 scripts/patch-android.py ${{ github.run_number }}
+
+      - name: Icono
+        continue-on-error: true
+        run: |
+          mkdir -p assets
+          node -e "require('sharp')('icon.svg',{density:600}).resize(1024,1024).png().toFile('assets/icon-only.png').then(()=>console.log('png ok'))"
+          npx @capacitor/assets generate --android --iconBackgroundColor '#0b0f14' --iconBackgroundColorDark '#0b0f14' --splashBackgroundColor '#0b0f14' --splashBackgroundColorDark '#0b0f14'
+
+      - name: Sincronizar
+        run: npx cap sync android
+
+      - name: Compilar APK
+        working-directory: android
+        run: ./gradlew assembleRelease --no-daemon --stacktrace
+
+      - name: Firmar APK
+        env:
+          KEYSTORE_B64: ${{ secrets.KEYSTORE_B64 }}
+          KEYSTORE_PASS: ${{ secrets.KEYSTORE_PASS }}
+        run: |
+          echo "$KEYSTORE_B64" | base64 -d > ks.jks
+          BT=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
+          "$BT/zipalign" -p -f 4 android/app/build/outputs/apk/release/app-release-unsigned.apk aligned.apk
+          "$BT/apksigner" sign --ks ks.jks --ks-pass env:KEYSTORE_PASS --ks-key-alias bateria --out bateria-info.apk aligned.apk
+          "$BT/apksigner" verify bateria-info.apk
+          rm -f ks.jks
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bateria-info-apk
+          path: bateria-info.apk
+
+      - name: Publicar descarga
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "v1.${{ github.run_number }}" bateria-info.apk \
+            --title "Batería Info 1.${{ github.run_number }}" \
+            --notes "APK para Android. Descárgala en el móvil e instálala." --latest

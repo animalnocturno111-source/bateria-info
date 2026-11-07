@@ -1,0 +1,16 @@
+{
+  "appId": "io.github.animalnocturno.bateriainfo",
+  "appName": "Batería Info",
+  "webDir": "www",
+  "backgroundColor": "#0b0f14",
+  "plugins": {
+    "BluetoothLe": {
+      "displayStrings": {
+        "scanning": "Buscando…",
+        "cancel": "Cancelar",
+        "availableDevices": "Elige tu batería",
+        "noDeviceFound": "No se encontró ninguna batería"
+      }
+    }
+  }
+}

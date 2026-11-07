@@ -710,6 +710,10 @@ async function reconnectLoop() {
 // Al abrir la app: reconectar sola a la última batería, si el navegador lo permite.
 async function autoConnect() {
   const saved = load("bi-device");
+  if (navigator.bluetooth && navigator.bluetooth.ready) {   // APK: permisos + encender Bluetooth
+    try { await navigator.bluetooth.ready; }
+    catch (e) { setStatus("Sin permiso Bluetooth", "err"); log("Permiso Bluetooth: " + (e.message || e)); return; }
+  }
   if (!saved || !navigator.bluetooth) return;
   setDevice(saved.name, "—");
   if (!navigator.bluetooth.getDevices) {
@@ -990,7 +994,7 @@ if (!navigator.bluetooth) $("noBt").classList.remove("hidden");
 { const o = load("bi-awake"); if (o === false) $("optAwake").checked = false; }
 $("optAwake").onchange = e => { store("bi-awake", e.target.checked); e.target.checked ? (proto && keepAwake()) : releaseAwake(); };
 autoConnect();
-if ("serviceWorker" in navigator && location.protocol.startsWith("http")) navigator.serviceWorker.register("sw.js").catch(() => {});
+if (!window.BATERIA_NATIVE && "serviceWorker" in navigator && location.protocol.startsWith("http")) navigator.serviceWorker.register("sw.js").catch(() => {});
 </script>
 </body>
 </html>

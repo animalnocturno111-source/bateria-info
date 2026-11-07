@@ -1,1 +1,7 @@
 .playwright-mcp/
+node_modules/
+www/
+android/
+assets/
+*.jks
+*.keystore
