@@ -133,6 +133,7 @@
         <input id="extraUuid" placeholder="UUID de servicio extra (opcional, ej. ffe0)">
       </div>
       <pre id="log"></pre>
+      <div class="row"><button id="btnShare" style="flex:1">📤 Compartir diagnóstico</button></div>
     </details>
   </section>
 </main>
@@ -146,7 +147,15 @@ const cat = (a, b) => { const r = new Uint8Array(a.length + b.length); r.set(a);
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 const NUS = "6e400001-b5a3-f393-e0a9-e50e24dcca9e";
-const BASE_SERVICES = [0xff00, 0xfff0, 0xffe0, 0xffd0, 0xffb0, 0xfee7, NUS];
+const BASE_SERVICES = [
+  0xff00, 0xfff0, 0xffe0, 0xffe5, 0xffd0, 0xffc0, 0xffb0, 0xff10, 0xfee7, 0xfe00,
+  0xae00, 0xae30, 0x18f0, 0xfff6, 0xffa0, 0xff90,
+  NUS,
+  "49535343-fe7d-4ae5-8fa9-9fafd205e455",   // Microchip / ISSC transparent UART
+  "0000fefb-0000-1000-8000-00805f9b34fb",   // Telit / Stollmann
+  "00010203-0405-0607-0809-0a0b0c0d1910",   // Telink
+  "0000ffe0-0000-1000-8000-00805f9b34fb",
+];
 const POLL_MS = 3000;
 
 let device = null, chNotify = null, chWrite = null;
@@ -388,8 +397,9 @@ async function connect() {
       }
       map.push({ sid, chars });
     }
+    if (!map.length) desc += "⚠ Ningún servicio conocido visible. El BMS usa un UUID no listado.\n";
     $("svc").textContent = desc;
-    log("Servicios: " + map.map(m => m.sid).join(", "));
+    log("Servicios: " + (map.map(m => m.sid).join(", ") || "ninguno"));
 
     const forced = $("proto").value;
     const order = { ff00: ["jbd"], fff0: ["daly", "pace", "jbd"], ffe0: ["pace", "jbd", "daly"] };
@@ -557,6 +567,15 @@ async function manualSend() {
 $("btnConnect").onclick = () => (device && device.gatt.connected) ? disconnect() : connect();
 $("btnDemo").onclick = startDemo;
 $("btnSend").onclick = manualSend;
+$("btnShare").onclick = async () => {
+  const text = "BATERIA INFO - DIAGNOSTICO\n" + navigator.userAgent + "\n\n" + $("svc").textContent + "\n\n" + logLines.join("\n");
+  try {
+    if (navigator.share) await navigator.share({ title: "Diagnóstico BMS", text });
+    else { await navigator.clipboard.writeText(text); alert("Diagnóstico copiado al portapapeles"); }
+  } catch (e) {
+    try { await navigator.clipboard.writeText(text); alert("Diagnóstico copiado al portapapeles"); } catch {}
+  }
+};
 if (!navigator.bluetooth) $("noBt").classList.remove("hidden");
 if ("serviceWorker" in navigator && location.protocol.startsWith("http")) navigator.serviceWorker.register("sw.js").catch(() => {});
 </script>
