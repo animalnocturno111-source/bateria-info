@@ -71,6 +71,7 @@
     <button id="btnConnect" class="primary">Conectar BMS</button>
     <select id="proto" title="Protocolo">
       <option value="auto">Auto</option>
+      <option value="paceex">PACEEX</option>
       <option value="pace">Pace</option>
       <option value="jbd">JBD</option>
       <option value="daly">Daly</option>
@@ -200,11 +201,11 @@ async function send(data) {
   }
 }
 
-function request(data, timeout = 2500) {
+function request(data, timeout = 2500, match = null) {
   return new Promise((resolve, reject) => {
     rx = new Uint8Array(0);
     const t = setTimeout(() => { waiter = null; reject(new Error("Sin respuesta")); }, timeout);
-    waiter = f => { clearTimeout(t); waiter = null; resolve(f); };
+    waiter = f => { if (match && !match(f)) return; clearTimeout(t); waiter = null; resolve(f); };
     send(data).catch(e => { clearTimeout(t); waiter = null; reject(e); });
   });
 }
@@ -224,6 +225,66 @@ async function useChars(notify, write) {
 /* ---------------- Protocolos ---------------- */
 const u16 = (b, i) => (b[i] << 8) | b[i + 1];
 const s16 = (b, i) => { const v = u16(b, i); return v > 32767 ? v - 65536 : v; };
+
+// --- PACEEX (PeiCheng / Pace, nombre "PC-xxxx", servicio fff0, app "BMS Tool") ---
+// Trama: 9A | 00 00 TT TT 00 00 | LEN | DATOS… | CRC16-Modbus (big-endian) | 9D
+// Referencia: github.com/patman15/aiobmsble (pace_bms.py)
+function crcModbus(a) {
+  let c = 0xFFFF;
+  for (const b of a) { c ^= b; for (let k = 0; k < 8; k++) c = (c & 1) ? (c >> 1) ^ 0xA001 : c >> 1; }
+  return c;
+}
+const PX = { SYS: [0x0A, 0x00], PACK: [0x0A, 0x01], CELL: [0x0A, 0x02], BAL: [0x0A, 0x03] };
+function pxCmd(t, data = []) {
+  const f = [0x9A, 0x00, 0x00, t[0], t[1], 0x00, 0x00, data.length, ...data];
+  const c = crcModbus(f);
+  f.push(c >> 8, c & 0xFF, 0x9D);
+  return new Uint8Array(f);
+}
+function pxExtract(buf) {
+  for (;;) {
+    const i = buf.indexOf(0x9A);
+    if (i < 0) return [null, new Uint8Array(0)];
+    buf = buf.slice(i);
+    if (buf.length < 8) return [null, buf];
+    const total = 11 + buf[7];
+    if (buf.length < total) return [null, buf];
+    const f = buf.slice(0, total);
+    if (f[total - 1] === 0x9D && crcModbus(f.slice(0, total - 3)) === ((f[total - 3] << 8) | f[total - 2]))
+      return [f, buf.slice(total)];
+    buf = buf.slice(1);   // falso inicio, seguir buscando
+  }
+}
+const pxReq = (t, data) => request(pxCmd(t, data), 2500, f => f[3] === t[0] && f[4] === t[1]);
+function pxParsePack(p) {
+  const S = 8;
+  const r = {
+    current: s16(p, S + 1) / 100, voltage: u16(p, S + 3) / 100, remainAh: u16(p, S + 5) / 100,
+    designAh: u16(p, S + 9) / 100, soc: p[S + 11], soh: p[S + 12], cycles: u16(p, S + 13),
+    cells: [], temps: []
+  };
+  r.fullAh = r.designAh * (r.soh || 100) / 100;
+  return r;
+}
+function pxParseCells(c, r) {
+  const end = c.length - 3, n = c[11];
+  for (let k = 0; k < n; k++) {
+    const o = 12 + k * 4;
+    if (o + 2 > end) break;
+    const v = u16(c, o); if (v) r.cells.push(v / 1000);
+  }
+  for (let k = 0; k < 6; k++) {   // 4 de celdas + MOSFET + ambiente
+    const o = 14 + k * 4;
+    if (o + 2 > end) break;
+    const t = u16(c, o); if (t) r.temps.push((t - 2731) / 10);
+  }
+}
+async function paceexPoll() {
+  const r = pxParsePack(await pxReq(PX.PACK, [1, 1]));
+  try { pxParseCells(await pxReq(PX.CELL, [1, 1]), r); } catch (e) { log("Celdas: " + e.message); }
+  try { const b = await pxReq(PX.BAL, [1, 1]); r.balancing = b[14] | (b[15] << 8); } catch {}
+  return r;
+}
 
 // --- JBD / Xiaoxiang (servicio ff00) ---
 const JBD_BASIC = new Uint8Array([0xDD, 0xA5, 0x03, 0x00, 0xFF, 0xFD, 0x77]);
@@ -352,7 +413,8 @@ async function paceProbe() {
 }
 
 const PROTOS = {
-  jbd:  { name: "JBD / Xiaoxiang", extract: jbdExtract,  poll: jbdPoll,  probe: jbdPoll },
+  paceex: { name: "PACEEX (BMS Tool)", extract: pxExtract, poll: paceexPoll, probe: paceexPoll },
+  jbd: { name: "JBD / Xiaoxiang", extract: jbdExtract,  poll: jbdPoll,  probe: jbdPoll },
   daly: { name: "Daly",            extract: dalyExtract, poll: dalyPoll, probe: dalyPoll },
   pace: { name: "Pace / Pylontech", extract: paceExtract, poll: pacePoll, probe: paceProbe },
 };
@@ -402,7 +464,7 @@ async function connect() {
     log("Servicios: " + (map.map(m => m.sid).join(", ") || "ninguno"));
 
     const forced = $("proto").value;
-    const order = { ff00: ["jbd"], fff0: ["daly", "pace", "jbd"], ffe0: ["pace", "jbd", "daly"] };
+    const order = { ff00: ["jbd"], fff0: ["paceex", "daly", "pace", "jbd"], ffe0: ["pace", "jbd", "daly"] };
     const rank = s => ({ ff00: 0, fff0: 1, ffe0: 2 }[s] ?? 3);
     map.sort((a, b) => rank(a.sid) - rank(b.sid));
 
@@ -500,9 +562,10 @@ function render(d) {
   setVal("temp", temps.length ? fmt(Math.max(...temps), 1) : "--", "°C");
   $("temps").textContent = temps.length ? "Sensores: " + temps.map(t => t.toFixed(1) + " °C").join(" · ") : "";
 
-  if (d.designAh && d.fullAh) {
+  const soh = d.soh != null ? d.soh : (d.designAh && d.fullAh ? d.fullAh / d.designAh * 100 : null);
+  if (soh != null) {
     $("sohTile").classList.remove("hidden");
-    setVal("soh", Math.round(Math.min(100, d.fullAh / d.designAh * 100)), "%");
+    setVal("soh", Math.round(Math.min(100, soh)), "%");
   }
 
   const flags = [];
@@ -516,11 +579,13 @@ function render(d) {
     const mx = Math.max(...cells), mn = Math.min(...cells);
     const iMax = cells.indexOf(mx), iMin = cells.indexOf(mn);
     setVal("delta", Math.round((mx - mn) * 1000), "mV");
-    $("cellInfo").textContent = `· ${cells.length}S · máx ${mx.toFixed(3)} · mín ${mn.toFixed(3)} V`;
+    $("cellInfo").textContent = `· ${cells.length}S · máx ${mx.toFixed(3)} · mín ${mn.toFixed(3)} V` +
+      (d.balancing ? " · ⚖ = balanceando" : "");
     $("cells").innerHTML = cells.map((v, k) => {
       const pct = Math.max(0, Math.min(100, (v - 2.8) / (3.65 - 2.8) * 100));
       const cls = k === iMax ? "max" : k === iMin ? "min" : "";
-      return `<div class="cell ${cls}"><div class="n">Celda ${k + 1}</div><div class="mv">${v.toFixed(3)} V</div><div class="b"><i style="width:${pct}%"></i></div></div>`;
+      const bal = d.balancing && (d.balancing >> k) & 1 ? " ⚖" : "";
+      return `<div class="cell ${cls}"><div class="n">Celda ${k + 1}${bal}</div><div class="mv">${v.toFixed(3)} V</div><div class="b"><i style="width:${pct}%"></i></div></div>`;
     }).join("");
   } else {
     setVal("delta", "--", "mV");

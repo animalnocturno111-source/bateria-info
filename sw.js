@@ -1,7 +1,7 @@
 // Service worker: guarda la app en el móvil para que funcione SIN internet.
 // Estrategia "caché primero": abre siempre desde la copia local y, si hay
 // conexión, actualiza la copia en segundo plano para la próxima vez.
-const CACHE = "bateria-info-v3";
+const CACHE = "bateria-info-v4";
 const FILES = ["./", "./index.html", "./manifest.json", "./icon.svg"];
 
 self.addEventListener("install", e => {
