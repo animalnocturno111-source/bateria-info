@@ -1,20 +1,55 @@
-// Genera las imágenes base que @capacitor/assets convierte en iconos y pantalla de inicio de Android.
+// Pone el icono y la pantalla de inicio propios en el proyecto Android de Capacitor.
+// IMPORTANTE: solo SUSTITUYE las imágenes que ya trae la plantilla, al mismo tamaño.
+// No crea recursos nuevos (ni variantes noche/ldpi), porque algunos móviles rechazaban
+// la APK como "paquete no válido" cuando se añadían.
 const sharp = require("sharp");
 const fs = require("fs");
+const path = require("path");
 
 const BG = "#12212B";
-fs.mkdirSync("assets", { recursive: true });
+const RES = "android/app/src/main/res";
+
+const render = (svg, size) => sharp(svg, { density: 600 }).resize(size, size).png().toBuffer();
+
+async function iconFor(name, w, h) {
+  if (name === "ic_launcher.png") return render("icon.svg", w);
+  if (name === "ic_launcher_round.png") {
+    const mask = Buffer.from(`<svg width="${w}" height="${w}"><circle cx="${w / 2}" cy="${w / 2}" r="${w / 2}"/></svg>`);
+    const sq = await sharp({ create: { width: w, height: w, channels: 4, background: BG } })
+      .composite([{ input: await render("res/icon-foreground.svg", w) }]).png().toBuffer();
+    return sharp(sq).composite([{ input: mask, blend: "dest-in" }]).png().toBuffer();
+  }
+  if (name === "ic_launcher_foreground.png") return render("res/icon-foreground.svg", w);
+  if (name === "splash.png") {
+    const s = Math.round(Math.min(w, h) * 0.6);
+    return sharp({ create: { width: w, height: h, channels: 4, background: BG } })
+      .composite([{ input: await render("res/icon-foreground.svg", s), gravity: "center" }]).png().toBuffer();
+  }
+  return null;
+}
 
 (async () => {
-  const svg = f => sharp(f, { density: 600 }).resize(1024, 1024).png();
-  await svg("icon.svg").toFile("assets/icon-only.png");                       // icono clásico
-  await svg("res/icon-foreground.svg").toFile("assets/icon-foreground.png");  // icono adaptativo: figura
-  await sharp({ create: { width: 1024, height: 1024, channels: 4, background: BG } })
-    .png().toFile("assets/icon-background.png");                              // icono adaptativo: fondo
-  const fg = await sharp("res/icon-foreground.svg", { density: 600 }).resize(1400, 1400).png().toBuffer();
-  for (const name of ["splash.png", "splash-dark.png"]) {                      // pantalla de inicio
-    await sharp({ create: { width: 2732, height: 2732, channels: 4, background: BG } })
-      .composite([{ input: fg, gravity: "center" }]).png().toFile(`assets/${name}`);
+  let n = 0;
+  for (const dir of fs.readdirSync(RES)) {
+    const full = path.join(RES, dir);
+    if (!fs.statSync(full).isDirectory()) continue;
+    for (const f of fs.readdirSync(full)) {
+      if (!f.endsWith(".png")) continue;
+      const file = path.join(full, f);
+      const { width, height } = await sharp(file).metadata();
+      const buf = await iconFor(f, width, height);
+      if (!buf) continue;
+      fs.writeFileSync(file, buf);
+      n++;
+      console.log(`sustituido ${dir}/${f} ${width}x${height}`);
+    }
   }
-  console.log("iconos ok");
+  // color de fondo del icono adaptativo (recurso que ya existe en la plantilla)
+  const colorFile = path.join(RES, "values", "ic_launcher_background.xml");
+  if (fs.existsSync(colorFile)) {
+    const xml = fs.readFileSync(colorFile, "utf8").replace(/#[0-9A-Fa-f]{6,8}/, BG);
+    fs.writeFileSync(colorFile, xml);
+    console.log("color de fondo del icono:", BG);
+  }
+  console.log(`${n} imágenes sustituidas`);
 })();

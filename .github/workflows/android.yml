@@ -43,8 +43,7 @@ jobs:
       - name: Icono y pantalla de inicio
         run: |
           node scripts/make-icons.cjs
-          npx @capacitor/assets generate --android
-          ls android/app/src/main/res/mipmap-anydpi-v26/ && cat android/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml
+          cat android/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml
 
       - name: Sincronizar
         run: npx cap sync android
